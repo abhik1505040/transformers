@@ -366,6 +366,8 @@ MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES = OrderedDict(
         ("deberta-v2", "DebertaV2ForQuestionAnswering"),
         ("ibert", "IBertForQuestionAnswering"),
         ("splinter", "SplinterForQuestionAnswering"),
+        ("t5", "T5ForQuestionAnswering"),
+        ("mt5", "MT5ForQuestionAnswering"),
     ]
 )
 
