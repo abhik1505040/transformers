@@ -1558,50 +1558,53 @@ class T5ForQuestionAnswering(T5PreTrainedModel):
                 attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
             )
 
-        hidden_states = encoder_outputs[0]
+        # hidden_states = encoder_outputs[0]
 
-        if self.model_parallel:
-            torch.cuda.set_device(self.decoder.first_device)
+        # if self.model_parallel:
+        #     torch.cuda.set_device(self.decoder.first_device)
 
-        if labels is not None and decoder_input_ids is None and decoder_inputs_embeds is None:
-            # get decoder inputs from shifting lm labels to the right
-            decoder_input_ids = self._shift_right(labels)
+        # if labels is not None and decoder_input_ids is None and decoder_inputs_embeds is None:
+        #     # get decoder inputs from shifting lm labels to the right
+        #     decoder_input_ids = self._shift_right(labels)
 
-        # If decoding with past key value states, only the last tokens
-        # should be given as an input
-        if past_key_values is not None:
-            assert labels is None, "Decoder should not use cached key value states when training."
-            if decoder_input_ids is not None:
-                decoder_input_ids = decoder_input_ids[:, -1:]
-            if decoder_inputs_embeds is not None:
-                decoder_inputs_embeds = decoder_inputs_embeds[:, -1:]
+        # # If decoding with past key value states, only the last tokens
+        # # should be given as an input
+        # if past_key_values is not None:
+        #     assert labels is None, "Decoder should not use cached key value states when training."
+        #     if decoder_input_ids is not None:
+        #         decoder_input_ids = decoder_input_ids[:, -1:]
+        #     if decoder_inputs_embeds is not None:
+        #         decoder_inputs_embeds = decoder_inputs_embeds[:, -1:]
 
-        # Set device for model parallelism
-        if self.model_parallel:
-            torch.cuda.set_device(self.decoder.first_device)
-            hidden_states = hidden_states.to(self.decoder.first_device)
-            if decoder_input_ids is not None:
-                decoder_input_ids = decoder_input_ids.to(self.decoder.first_device)
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(self.decoder.first_device)
-            if decoder_attention_mask is not None:
-                decoder_attention_mask = decoder_attention_mask.to(self.decoder.first_device)
+        # # Set device for model parallelism
+        # if self.model_parallel:
+        #     torch.cuda.set_device(self.decoder.first_device)
+        #     hidden_states = hidden_states.to(self.decoder.first_device)
+        #     if decoder_input_ids is not None:
+        #         decoder_input_ids = decoder_input_ids.to(self.decoder.first_device)
+        #     if attention_mask is not None:
+        #         attention_mask = attention_mask.to(self.decoder.first_device)
+        #     if decoder_attention_mask is not None:
+        #         decoder_attention_mask = decoder_attention_mask.to(self.decoder.first_device)
 
-        # Decode
-        decoder_outputs = self.decoder(
-            input_ids=decoder_input_ids,
-            attention_mask=decoder_attention_mask,
-            inputs_embeds=decoder_inputs_embeds,
-            past_key_values=past_key_values,
-            encoder_hidden_states=hidden_states,
-            encoder_attention_mask=attention_mask,
-            head_mask=decoder_head_mask,
-            cross_attn_head_mask=cross_attn_head_mask,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
+        # # Decode
+        # decoder_outputs = self.decoder(
+        #     input_ids=decoder_input_ids,
+        #     attention_mask=decoder_attention_mask,
+        #     inputs_embeds=decoder_inputs_embeds,
+        #     past_key_values=past_key_values,
+        #     encoder_hidden_states=hidden_states,
+        #     encoder_attention_mask=attention_mask,
+        #     head_mask=decoder_head_mask,
+        #     cross_attn_head_mask=cross_attn_head_mask,
+        #     use_cache=use_cache,
+        #     output_attentions=output_attentions,
+        #     output_hidden_states=output_hidden_states,
+        #     return_dict=return_dict,
+        # )
+
+        # this is temporary to check the encoder quality
+        decoder_outputs = encoder_outputs
 
         sequence_output = decoder_outputs[0]
 
