@@ -1649,13 +1649,6 @@ class T5ForQuestionAnswering(T5PreTrainedModel):
             loss=total_loss,
             start_logits=start_logits,
             end_logits=end_logits,
-            past_key_values=decoder_outputs.past_key_values,
-            decoder_hidden_states=decoder_outputs.decoder_hidden_states,
-            decoder_attentions=decoder_outputs.decoder_attentions,
-            cross_attentions=decoder_outputs.cross_attentions,
-            encoder_last_hidden_state=encoder_outputs.encoder_last_hidden_state,
-            encoder_hidden_states=encoder_outputs.encoder_hidden_states,
-            encoder_attentions=encoder_outputs.encoder_attentions,
         )
 
 
