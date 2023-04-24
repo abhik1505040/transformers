@@ -18,7 +18,7 @@ class LaMDAConfig(PretrainedConfig):
 
     Arguments:
         vocab_size (`int`, *optional*, defaults to 250112):
-            Vocabulary size of the T5 model. Defines the number of different tokens that can be represented by the
+            Vocabulary size of the LaMDA model. Defines the number of different tokens that can be represented by the
             `inputs_ids` passed when calling [`LaMDAModel`].
         d_model (`int`, *optional*, defaults to 512):
             Size of the encoder layers and the pooler layer.
@@ -67,23 +67,12 @@ class LaMDAConfig(PretrainedConfig):
         initializer_factor=1.0,
         feed_forward_proj="gated-gelu",
         use_cache=True,
-        tokenizer_class="LaMDATokenizer",
         tie_word_embeddings=False,
         pad_token_id=0,
         eos_token_id=1,
         bos_token_id=0,
-        decoder_start_token_id=0,
         **kwargs,
     ):
-        super().__init__(
-            tokenizer_class=tokenizer_class,
-            tie_word_embeddings=tie_word_embeddings,
-            pad_token_id=pad_token_id,
-            eos_token_id=eos_token_id,
-            bos_token_id=bos_token_id,
-            decoder_start_token_id=decoder_start_token_id,
-            **kwargs,
-        )
         self.vocab_size = vocab_size
         self.d_model = d_model
         self.d_kv = d_kv
@@ -112,6 +101,14 @@ class LaMDAConfig(PretrainedConfig):
         # for backwards compatibility
         if feed_forward_proj == "gated-gelu":
             self.dense_act_fn = "gelu_new"
+
+        super().__init__(
+            tie_word_embeddings=tie_word_embeddings,
+            pad_token_id=pad_token_id,
+            eos_token_id=eos_token_id,
+            bos_token_id=bos_token_id,
+            **kwargs,
+        )
 
     @property
     def hidden_size(self):

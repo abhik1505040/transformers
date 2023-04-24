@@ -15,6 +15,7 @@ from ...activations import ACT2FN
 from ...modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPast,
+    CausalLMOutputWithPast,
     Seq2SeqLMOutput,
     Seq2SeqModelOutput,
 )
@@ -60,7 +61,7 @@ class LaMDALayerNorm(nn.Module):
         return self.weight * hidden_states
 
 class LaMDADenseActDense(nn.Module):
-    def __init__(self, config: MT5Config):
+    def __init__(self, config: LaMDAConfig):
         super().__init__()
         self.wi = nn.Linear(config.d_model, config.d_ff, bias=False)
         self.wo = nn.Linear(config.d_ff, config.d_model, bias=False)
@@ -81,7 +82,7 @@ class LaMDADenseActDense(nn.Module):
         return hidden_states
 
 class LaMDADenseGatedActDense(nn.Module):
-    def __init__(self, config: MT5Config):
+    def __init__(self, config: LaMDAConfig):
         super().__init__()
         self.wi_0 = nn.Linear(config.d_model, config.d_ff, bias=False)
         self.wi_1 = nn.Linear(config.d_model, config.d_ff, bias=False)
@@ -106,7 +107,7 @@ class LaMDADenseGatedActDense(nn.Module):
         return hidden_states
 
 class LaMDALayerFF(nn.Module):
-    def __init__(self, config: MT5Config):
+    def __init__(self, config: LaMDAConfig):
         super().__init__()
         if config.is_gated_act:
             self.DenseReluDense = LaMDADenseGatedActDense(config)
@@ -657,7 +658,6 @@ class LaMDAStack(LaMDAPreTrainedModel):
         self.device_map = None
         self.gradient_checkpointing = False
 
-    @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
         # Check validity of device_map
         self.device_map = (
@@ -678,7 +678,6 @@ class LaMDAStack(LaMDAPreTrainedModel):
         # Set final layer norm to last device
         self.final_layer_norm = self.final_layer_norm.to(self.last_device)
 
-    @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
     def deparallelize(self):
         
         self.model_parallel = False
@@ -892,7 +891,6 @@ class LaMDAModel(LaMDAPreTrainedModel):
         self.model_parallel = False
         self.device_map = None
 
-    @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
         self.device_map = (
             get_device_map(len(self.decoder.block), range(torch.cuda.device_count()))
@@ -903,7 +901,6 @@ class LaMDAModel(LaMDAPreTrainedModel):
         self.decoder.parallelize(self.device_map)
         self.model_parallel = True
 
-    @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
     def deparallelize(self):
         self.decoder.deparallelize()
         self.decoder = self.decoder.to("cpu")
@@ -991,7 +988,6 @@ class LaMDAForCausalLM(LaMDAPreTrainedModel):
         self.model_parallel = False
         self.device_map = None
 
-    @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
         self.device_map = (
             get_device_map(len(self.decoder.block), range(torch.cuda.device_count()))
@@ -1003,7 +999,6 @@ class LaMDAForCausalLM(LaMDAPreTrainedModel):
         self.lm_head = self.lm_head.to(self.decoder.first_device)
         self.model_parallel = True
 
-    @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
     def deparallelize(self):
         self.decoder.deparallelize()
         self.decoder = self.decoder.to("cpu")

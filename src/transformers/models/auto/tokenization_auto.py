@@ -317,7 +317,7 @@ else:
                     "T5TokenizerFast" if is_tokenizers_available() else None,
                 ),
             ),
-            ("lamda", ("LaMDATokenizer" if is_sentencepiece_available() else None), None)
+            ("lamda", ("LaMDATokenizer" if is_sentencepiece_available() else None, None)),
             ("tapas", ("TapasTokenizer", None)),
             ("tapex", ("TapexTokenizer", None)),
             ("transfo-xl", ("TransfoXLTokenizer", None)),

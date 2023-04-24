@@ -107,12 +107,11 @@ class LaMDATokenizer(PreTrainedTokenizer):
             eos_token=eos_token,
             unk_token=unk_token,
             pad_token=pad_token,
-            extra_ids=extra_ids,
             additional_special_tokens=additional_special_tokens,
             sp_model_kwargs=self.sp_model_kwargs,
             **kwargs,
         )
-
+        
         self.vocab_file = vocab_file
         
         self.sp_model = spm.SentencePieceProcessor(**self.sp_model_kwargs)
