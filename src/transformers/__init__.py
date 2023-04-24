@@ -456,6 +456,7 @@ _import_structure = {
     "models.swinv2": ["SWINV2_PRETRAINED_CONFIG_ARCHIVE_MAP", "Swinv2Config"],
     "models.switch_transformers": ["SWITCH_TRANSFORMERS_PRETRAINED_CONFIG_ARCHIVE_MAP", "SwitchTransformersConfig"],
     "models.t5": ["T5_PRETRAINED_CONFIG_ARCHIVE_MAP", "T5Config"],
+    "models.lamda": ["LaMDAConfig"],
     "models.table_transformer": ["TABLE_TRANSFORMER_PRETRAINED_CONFIG_ARCHIVE_MAP", "TableTransformerConfig"],
     "models.tapas": ["TAPAS_PRETRAINED_CONFIG_ARCHIVE_MAP", "TapasConfig", "TapasTokenizer"],
     "models.tapex": ["TapexTokenizer"],
@@ -692,6 +693,7 @@ else:
     _import_structure["models.speech_to_text"].append("Speech2TextTokenizer")
     _import_structure["models.speecht5"].append("SpeechT5Tokenizer")
     _import_structure["models.t5"].append("T5Tokenizer")
+    _import_structure["models.lamda"].append("LaMDATokenizer")
     _import_structure["models.xglm"].append("XGLMTokenizer")
     _import_structure["models.xlm_prophetnet"].append("XLMProphetNetTokenizer")
     _import_structure["models.xlm_roberta"].append("XLMRobertaTokenizer")
@@ -2432,6 +2434,14 @@ else:
             "load_tf_weights_in_t5",
         ]
     )
+    _import_structure["models.lamda"].extend(
+        [
+            "LaMDAForCausalLM",
+            "LaMDAModel",
+            "LaMDAPreTrainedModel",
+            "load_tf_weights_in_lamda",
+        ]
+    )
     _import_structure["models.table_transformer"].extend(
         [
             "TABLE_TRANSFORMER_PRETRAINED_MODEL_ARCHIVE_LIST",
@@ -4132,6 +4142,7 @@ if TYPE_CHECKING:
     from .models.swinv2 import SWINV2_PRETRAINED_CONFIG_ARCHIVE_MAP, Swinv2Config
     from .models.switch_transformers import SWITCH_TRANSFORMERS_PRETRAINED_CONFIG_ARCHIVE_MAP, SwitchTransformersConfig
     from .models.t5 import T5_PRETRAINED_CONFIG_ARCHIVE_MAP, T5Config
+    from .models.lamda import LaMDAConfig
     from .models.table_transformer import TABLE_TRANSFORMER_PRETRAINED_CONFIG_ARCHIVE_MAP, TableTransformerConfig
     from .models.tapas import TAPAS_PRETRAINED_CONFIG_ARCHIVE_MAP, TapasConfig, TapasTokenizer
     from .models.tapex import TapexTokenizer
@@ -4348,6 +4359,7 @@ if TYPE_CHECKING:
         from .models.speech_to_text import Speech2TextTokenizer
         from .models.speecht5 import SpeechT5Tokenizer
         from .models.t5 import T5Tokenizer
+        from .models.lamda import LaMDATokenizer
         from .models.xglm import XGLMTokenizer
         from .models.xlm_prophetnet import XLMProphetNetTokenizer
         from .models.xlm_roberta import XLMRobertaTokenizer
@@ -5767,6 +5779,12 @@ if TYPE_CHECKING:
             T5Model,
             T5PreTrainedModel,
             load_tf_weights_in_t5,
+        )
+        from .models.lamda import (
+            LaMDAForCausalLM,
+            LaMDAModel,
+            LaMDAPreTrainedModel,
+            load_tf_weights_in_lamda
         )
         from .models.table_transformer import (
             TABLE_TRANSFORMER_PRETRAINED_MODEL_ARCHIVE_LIST,
