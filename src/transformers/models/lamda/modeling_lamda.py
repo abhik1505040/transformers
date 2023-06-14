@@ -13,11 +13,8 @@ from torch.utils.checkpoint import checkpoint
 
 from ...activations import ACT2FN
 from ...modeling_outputs import (
-    BaseModelOutput,
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
-    Seq2SeqLMOutput,
-    Seq2SeqModelOutput,
 )
 from ...modeling_utils import PreTrainedModel
 from ...pytorch_utils import find_pruneable_heads_and_indices, prune_linear_layer
@@ -35,6 +32,123 @@ from .configuration_lamda import LaMDAConfig
 
 
 logger = logging.get_logger(__name__)
+
+def load_tf_weights_in_lamda(model, config, tf_checkpoint_path):
+    """Load tf checkpoints in a pytorch model."""
+    try:
+        import re
+
+        import numpy as np
+        import tensorflow as tf
+    except ImportError:
+        logger.error(
+            "Loading a TensorFlow model in PyTorch, requires TensorFlow to be installed. Please see "
+            "https://www.tensorflow.org/install/ for installation instructions."
+        )
+        raise
+    tf_path = os.path.abspath(tf_checkpoint_path)
+    logger.info(f"Converting TensorFlow checkpoint from {tf_path}")
+    # Load weights from TF model
+    init_vars = tf.train.list_variables(tf_path)
+    names = []
+    tf_weights = {}
+    
+    # some preprocessing required to match variable names
+    for name, shape in init_vars:
+        logger.info(f"Loading TF weight {name} with shape {shape}")
+        array = tf.train.load_variable(tf_path, name)
+        
+        if name.startswith("transformer/"):
+            replacement = "decoder"
+            if "embedding" in name:
+                replacement = "shared"
+            name = re.sub("^transformer", replacement, name)
+
+        names.append(name)
+        tf_weights[name] = array
+
+    for txt_name in names:
+        name = txt_name.split("/")
+        # adam_v and adam_m are variables used in AdamWeightDecayOptimizer to calculated m and v
+        # which are not required for using pretrained model
+        if any(
+            n in ["adam_v", "adam_m", "AdamWeightDecayOptimizer", "AdamWeightDecayOptimizer_1", "global_step"]
+            for n in name
+        ):
+            logger.info(f"Skipping {'/'.join(name)}")
+            tf_weights.pop(txt_name, None)
+            continue
+        if "_slot_" in name[-1]:
+            logger.info(f"Skipping {'/'.join(name)}")
+            tf_weights.pop(txt_name, None)
+            continue
+        pointer = model
+        array = tf_weights[txt_name]
+
+        for m_name in name:
+            if re.fullmatch(r"[A-Za-z]+_\d+", m_name):
+                scope_names = re.split(r"_(\d+)", m_name)
+            else:
+                scope_names = [m_name]
+
+            if scope_names[0] in ["kernel", "scale", "embedding"]:
+                pointer = getattr(pointer, "weight")
+            elif scope_names[0] in ["self_attention",]:
+                pointer = getattr(pointer, "layer")
+                pointer = pointer[0]
+            elif scope_names[0] in ["enc_dec_attention",]:
+                pointer = getattr(pointer, "layer")
+                pointer = pointer[1]
+            elif scope_names[0] in ["dense_relu_dense",]:
+                pointer = getattr(pointer, "layer")
+                pointer = pointer[2]
+            elif scope_names[0] == "rms_norm":
+                if hasattr(pointer, "layer_norm"):
+                    pointer = getattr(pointer, "layer_norm")
+                elif hasattr(pointer, "final_layer_norm"):
+                    pointer = getattr(pointer, "final_layer_norm")
+            elif scope_names[0] == "scale":
+                pointer = getattr(pointer, "weight")
+            elif scope_names[0] == "output_bias" or scope_names[0] == "beta":
+                pointer = getattr(pointer, "bias")
+            elif scope_names[0] == "squad":
+                pointer = getattr(pointer, "classifier")
+            elif scope_names[0] == "decoder" and name[1] == "logits":
+                continue
+            elif scope_names[0] == "logits":
+                pointer = getattr(pointer, "lm_head")
+            elif scope_names[0] == "wi" and len(scope_names) > 1 and scope_names[1].isdigit():
+                pointer = getattr(pointer, f"wi_{scope_names[1]}")
+                continue
+            else:
+                try:
+                    pointer = getattr(pointer, scope_names[0])
+                except AttributeError:
+                    logger.info(f"Skipping {'/'.join(name)}")
+                    continue
+            if len(scope_names) >= 2:
+                num = int(scope_names[1])
+                pointer = pointer[num]
+
+        if scope_names[0] not in ["kernel", "scale", "embedding"]:
+            pointer = getattr(pointer, "weight")
+        if scope_names[0] != "embedding":
+            logger.info(f"Transposing numpy weight of shape {array.shape} for {name}")
+            array = np.transpose(array)
+        try:
+            assert (
+                pointer.shape == array.shape
+            ), f"Pointer shape {pointer.shape} and array shape {array.shape} mismatched"
+        except AssertionError as e:
+            e.args += (pointer.shape, array.shape)
+            raise
+        logger.info(f"Initialize PyTorch weight {name}")
+        pointer.data = torch.from_numpy(array.astype(np.float32))
+        tf_weights.pop(txt_name, None)
+
+    logger.info(f"Weights not copied to PyTorch model: {', '.join(tf_weights.keys())}.")
+    return model
+
 
 class LaMDALayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-6):
@@ -459,122 +573,9 @@ class LaMDABlock(nn.Module):
         else:
             outputs = outputs + attention_outputs
 
-        return outputs  # hidden-states, present_key_value_states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights)
+        return outputs  # hidden-states, present_key_value_states, (self-attention position bias), (self-attention weights), 
 
 
-def load_tf_weights_in_lamda(model, config, tf_checkpoint_path):
-    """Load tf checkpoints in a pytorch model."""
-    try:
-        import re
-
-        import numpy as np
-        import tensorflow as tf
-    except ImportError:
-        logger.error(
-            "Loading a TensorFlow model in PyTorch, requires TensorFlow to be installed. Please see "
-            "https://www.tensorflow.org/install/ for installation instructions."
-        )
-        raise
-    tf_path = os.path.abspath(tf_checkpoint_path)
-    logger.info(f"Converting TensorFlow checkpoint from {tf_path}")
-    # Load weights from TF model
-    init_vars = tf.train.list_variables(tf_path)
-    names = []
-    tf_weights = {}
-    
-    # some preprocessing required to match variable names
-    for name, shape in init_vars:
-        logger.info(f"Loading TF weight {name} with shape {shape}")
-        array = tf.train.load_variable(tf_path, name)
-        
-        if name.startswith("transformer/"):
-            replacement = "decoder"
-            if "embedding" in name:
-                replacement = "shared"
-            name = re.sub("^transformer", replacement, name)
-
-        names.append(name)
-        tf_weights[name] = array
-
-    for txt_name in names:
-        name = txt_name.split("/")
-        # adam_v and adam_m are variables used in AdamWeightDecayOptimizer to calculated m and v
-        # which are not required for using pretrained model
-        if any(
-            n in ["adam_v", "adam_m", "AdamWeightDecayOptimizer", "AdamWeightDecayOptimizer_1", "global_step"]
-            for n in name
-        ):
-            logger.info(f"Skipping {'/'.join(name)}")
-            tf_weights.pop(txt_name, None)
-            continue
-        if "_slot_" in name[-1]:
-            logger.info(f"Skipping {'/'.join(name)}")
-            tf_weights.pop(txt_name, None)
-            continue
-        pointer = model
-        array = tf_weights[txt_name]
-
-        for m_name in name:
-            if re.fullmatch(r"[A-Za-z]+_\d+", m_name):
-                scope_names = re.split(r"_(\d+)", m_name)
-            else:
-                scope_names = [m_name]
-            if scope_names[0] in ["kernel", "scale", "embedding"]:
-                pointer = getattr(pointer, "weight")
-            elif scope_names[0] == "self_attention":
-                pointer = getattr(pointer, "layer")
-                pointer = pointer[0]
-            elif scope_names[0] == "enc_dec_attention":
-                pointer = getattr(pointer, "layer")
-                pointer = pointer[1]
-            elif scope_names[0] == "dense_relu_dense":
-                pointer = getattr(pointer, "layer")
-                pointer = pointer[2]
-            elif scope_names[0] == "rms_norm":
-                if hasattr(pointer, "layer_norm"):
-                    pointer = getattr(pointer, "layer_norm")
-                elif hasattr(pointer, "final_layer_norm"):
-                    pointer = getattr(pointer, "final_layer_norm")
-            elif scope_names[0] == "scale":
-                pointer = getattr(pointer, "weight")
-            elif scope_names[0] == "output_bias" or scope_names[0] == "beta":
-                pointer = getattr(pointer, "bias")
-            elif scope_names[0] == "squad":
-                pointer = getattr(pointer, "classifier")
-            elif scope_names[0] == "decoder" and name[1] == "logits":
-                continue
-            elif scope_names[0] == "logits":
-                pointer = getattr(pointer, "lm_head")
-            elif scope_names[0] == "wi" and len(scope_names) > 1 and scope_names[1].isdigit():
-                pointer = getattr(pointer, f"wi_{scope_names[1]}")
-                continue
-            else:
-                try:
-                    pointer = getattr(pointer, scope_names[0])
-                except AttributeError:
-                    logger.info(f"Skipping {'/'.join(name)}")
-                    continue
-            if len(scope_names) >= 2:
-                num = int(scope_names[1])
-                pointer = pointer[num]
-        if scope_names[0] not in ["kernel", "scale", "embedding"]:
-            pointer = getattr(pointer, "weight")
-        if scope_names[0] != "embedding":
-            logger.info(f"Transposing numpy weight of shape {array.shape} for {name}")
-            array = np.transpose(array)
-        try:
-            assert (
-                pointer.shape == array.shape
-            ), f"Pointer shape {pointer.shape} and array shape {array.shape} mismatched"
-        except AssertionError as e:
-            e.args += (pointer.shape, array.shape)
-            raise
-        logger.info(f"Initialize PyTorch weight {name}")
-        pointer.data = torch.from_numpy(array.astype(np.float32))
-        tf_weights.pop(txt_name, None)
-
-    logger.info(f"Weights not copied to PyTorch model: {', '.join(tf_weights.keys())}.")
-    return model
 
 class LaMDAPreTrainedModel(PreTrainedModel):
     """
@@ -583,7 +584,8 @@ class LaMDAPreTrainedModel(PreTrainedModel):
     """
 
     config_class = LaMDAConfig
-    base_model_prefix = "transformer"
+    load_tf_weights = load_tf_weights_in_lamda
+    base_model_prefix = "decoder"
     is_parallelizable = True
     supports_gradient_checkpointing = True
     _no_split_modules = ["LaMDABlock"]
@@ -643,7 +645,7 @@ class LaMDAStack(LaMDAPreTrainedModel):
         super().__init__(config)
 
         self.embed_tokens = embed_tokens
-        self.is_decoder = config.is_decoder
+        self.is_decoder = True
 
         self.block = nn.ModuleList(
             [LaMDABlock(config, has_relative_attention_bias=bool(i == 0)) for i in range(config.num_layers)]
@@ -865,7 +867,6 @@ class LaMDAModel(LaMDAPreTrainedModel):
     
     model_type = "lamda"
     config_class = LaMDAConfig
-    load_tf_weights = load_tf_weights_in_lamda
     _keys_to_ignore_on_load_missing = [
         r"decoder.embed_tokens.weight",
     ]
@@ -1042,6 +1043,10 @@ class LaMDAForCausalLM(LaMDAPreTrainedModel):
 
         if self.model_parallel:
             torch.cuda.set_device(self.decoder.first_device)
+        
+        # Explicitly set first token mask
+        if past_key_values is None and attention_mask.numel() > 0:
+            attention_mask[..., 0] = 1
 
         # Decode
         decoder_outputs = self.decoder(
@@ -1121,8 +1126,27 @@ class LaMDAForCausalLM(LaMDAPreTrainedModel):
 
     @staticmethod
     def _reorder_cache(past_key_values, beam_idx):
-        reordered_past = ()
-        for layer_past in past_key_values:
-            reordered_past += (tuple(past_state.index_select(0, beam_idx) for past_state in layer_past),)
-        return reordered_past
+        # if decoder past is not included in output
+        # speedy decoding is disabled and no need to reorder
+        if past_key_values is None:
+            logger.warning("You might want to consider setting `use_cache=True` to speed up decoding")
+            return past_key_values
 
+        reordered_decoder_past = ()
+        for layer_past_states in past_key_values:
+            # get the correct batch idx from layer past batch dim
+            # batch dim of `past` is at 2nd position
+            reordered_layer_past_states = ()
+            for layer_past_state in layer_past_states:
+                # need to set correct `past` for each of the four key / value states
+                reordered_layer_past_states = reordered_layer_past_states + (
+                    layer_past_state.index_select(0, beam_idx.to(layer_past_state.device)),
+                )
+
+            assert reordered_layer_past_states[0].shape == layer_past_states[0].shape
+            assert len(reordered_layer_past_states) == len(layer_past_states)
+
+            reordered_decoder_past = reordered_decoder_past + (reordered_layer_past_states,)
+        return reordered_decoder_past
+
+        

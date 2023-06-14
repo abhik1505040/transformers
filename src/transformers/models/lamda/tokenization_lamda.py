@@ -96,6 +96,7 @@ class LaMDATokenizer(PreTrainedTokenizer):
         unk_token="<unk>",
         pad_token="<pad>",
         additional_special_tokens=None,
+        add_bos_token=True,
         sp_model_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
@@ -113,7 +114,7 @@ class LaMDATokenizer(PreTrainedTokenizer):
         )
         
         self.vocab_file = vocab_file
-        
+        self.add_bos_token = add_bos_token
         self.sp_model = spm.SentencePieceProcessor(**self.sp_model_kwargs)
         self.sp_model.Load(vocab_file)
 
@@ -148,11 +149,17 @@ class LaMDATokenizer(PreTrainedTokenizer):
             return super().get_special_tokens_mask(
                 token_ids_0=token_ids_0, token_ids_1=token_ids_1, already_has_special_tokens=True
             )
+        
+        if not self.add_bos_token:
+            return super().get_special_tokens_mask(
+                token_ids_0=token_ids_0, token_ids_1=token_ids_1, already_has_special_tokens=False
+            )
 
         # normal case: some special tokens
         if token_ids_1 is None:
-            return [1] + ([0] * len(token_ids_0)) + [1]
-        return [1] + ([0] * len(token_ids_0)) + [1] + ([0] * len(token_ids_1)) + [1]
+            return [1] + ([0] * len(token_ids_0))
+        
+        return [1] + ([0] * len(token_ids_0)) + [1] + ([0] * len(token_ids_1))
 
     
     def _add_eos_if_not_present(self, token_ids: List[int]) -> List[int]:
@@ -166,28 +173,6 @@ class LaMDATokenizer(PreTrainedTokenizer):
         else:
             return token_ids + [self.eos_token_id]
 
-    def create_token_type_ids_from_sequences(
-        self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
-    ) -> List[int]:
-        """
-        Create a mask from the two sequences passed to be used in a sequence-pair classification task. T5 does not make
-        use of token type ids, therefore a list of zeros is returned.
-
-        Args:
-            token_ids_0 (`List[int]`):
-                List of IDs.
-            token_ids_1 (`List[int]`, *optional*):
-                Optional second list of IDs for sequence pairs.
-
-        Returns:
-            `List[int]`: List of zeros.
-        """
-        eos = [self.eos_token_id]
-        bos = [self.bos_token_id]
-
-        if token_ids_1 is None:
-            return len(bos + token_ids_0 + eos) * [0]
-        return len(bos + token_ids_0 + eos + token_ids_1 + eos) * [0]
 
     def build_inputs_with_special_tokens(
         self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
@@ -208,11 +193,12 @@ class LaMDATokenizer(PreTrainedTokenizer):
         Returns:
             `List[int]`: List of [input IDs](../glossary#input-ids) with the appropriate special tokens.
         """
-        token_ids_0 = [self.bos_token_id] + self._add_eos_if_not_present(token_ids_0)
+        bos_token_ids = [self.bos_token_id] if self.add_bos_token else []
+        token_ids_0 = bos_token_ids + token_ids_0
         if token_ids_1 is None:
             return token_ids_0
         else:
-            token_ids_1 = self._add_eos_if_not_present(token_ids_1)
+            token_ids_1 = [self.eos_token_id] + token_ids_1
             return token_ids_0 + token_ids_1
 
     def __getstate__(self):
